@@ -8,6 +8,46 @@ const { analyzeImageWithGemini } = require("../services/geminiVision");
 
 const upload = multer({ dest: "uploads/" });
 
+/* -------------------- NORMALIZATION -------------------- */
+function normalizeCrop(crop) {
+  if (!crop) return "Unknown";
+
+  const c = crop.toLowerCase();
+
+  if (c.includes("maize") || c.includes("corn")) return "corn";
+  if (c.includes("rice") || c.includes("paddy")) return "rice";
+  if (c.includes("wheat")) return "wheat";
+  if (c.includes("tomato")) return "tomato";
+
+  return "Unknown";
+}
+
+/* -------------------- DOMAIN KNOWLEDGE -------------------- */
+const HIGH_RISK_DISEASES = [
+  "corn smut",
+  "late blight",
+  "bacterial wilt",
+  "panama disease",
+  "wheat rust"
+];
+
+const DISEASE_WARNINGS = {
+  "corn smut":
+    "Galls can eventually burst, releasing millions of dark spores that can persist in the soil for several years and spread via wind."
+};
+
+const SUPPORTED_CROPS = [
+  "tomato",
+  "rice",
+  "wheat",
+  "corn",
+  "potato",
+  "cotton",
+  "sugarcane",
+  "Unknown"
+];
+
+/* -------------------- ROUTE -------------------- */
 router.post("/", upload.single("image"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
@@ -22,10 +62,8 @@ router.post("/", upload.single("image"), async (req, res) => {
     const imageBuffer = fs.readFileSync(imagePath);
     const imageBase64 = imageBuffer.toString("base64");
 
-    // 🔹 SINGLE GEMINI CALL
     const aiResponse = await analyzeImageWithGemini(imageBase64);
 
-    // 🔹 QUOTA HANDLING
     if (aiResponse.status === "RATE_LIMITED") {
       return res.status(429).json({
         success: false,
@@ -33,7 +71,6 @@ router.post("/", upload.single("image"), async (req, res) => {
       });
     }
 
-    // 🔹 AI FAILURE (not quota)
     if (aiResponse.status !== "OK") {
       return res.status(500).json({
         success: false,
@@ -41,7 +78,6 @@ router.post("/", upload.single("image"), async (req, res) => {
       });
     }
 
-    // 🔹 SAFE JSON PARSE
     let result;
     try {
       const cleaned = aiResponse.analysis
@@ -50,35 +86,48 @@ router.post("/", upload.single("image"), async (req, res) => {
         .trim();
 
       result = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("❌ Invalid AI JSON:", aiResponse.analysis);
+    } catch {
       return res.status(500).json({
         success: false,
         error: "AI returned an invalid response."
       });
     }
 
-    // 🔹 DOMAIN VALIDATION
+    /* -------------------- VALIDATION -------------------- */
     if (result.isPlant !== true) {
       return res.status(400).json({
         success: false,
-        error: "Invalid image. Please upload a crop leaf."
+        error: "Invalid image. Please upload a crop image."
       });
     }
 
-    // 🔹 HARD CROP VALIDATION
-    const allowedCrops = ["tomato", "rice", "wheat"];
+    /* -------------------- NORMALIZE CROP -------------------- */
+    result.crop = normalizeCrop(result.crop);
+
+    /* -------------------- RISK OVERRIDE -------------------- */
     if (
-      !result.crop ||
-      !allowedCrops.includes(result.crop.toLowerCase())
+      result.disease &&
+      HIGH_RISK_DISEASES.includes(result.disease.toLowerCase())
     ) {
-      return res.status(400).json({
-        success: false,
-        error: "Unsupported or invalid crop detected."
-      });
+      result.risk = "High";
     }
 
-    // 🔹 SUCCESS
+    /* -------------------- WARNING INJECTION -------------------- */
+    if (!result.warning || result.warning === "None") {
+      const key = result.disease?.toLowerCase();
+      if (DISEASE_WARNINGS[key]) {
+        result.warning = DISEASE_WARNINGS[key];
+      }
+    }
+
+    /* -------------------- SUPPORT CHECK (NON-BLOCKING) -------------------- */
+    if (!SUPPORTED_CROPS.includes(result.crop)) {
+      result.warning =
+        result.warning ||
+        "Crop detected but full advisory support may be limited.";
+    }
+
+    /* -------------------- SUCCESS -------------------- */
     return res.status(200).json({
       success: true,
       analysis: result
@@ -91,7 +140,6 @@ router.post("/", upload.single("image"), async (req, res) => {
       error: "Server error while analyzing image."
     });
   } finally {
-    // 🔹 ALWAYS CLEAN UP FILE
     if (imagePath) {
       fs.unlink(imagePath, () => {});
     }

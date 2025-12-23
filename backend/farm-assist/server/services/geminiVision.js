@@ -18,20 +18,58 @@ const GEMINI_URL =
  */
 async function analyzeImageWithGemini(imageBase64) {
   const prompt = `
-You are an agricultural plant disease detection system.
+You are an expert agricultural computer vision system.
 
-Task:
-1. Decide whether the image shows a plant leaf or crop.
-2. If it does NOT, return ONLY this JSON:
+Your task is to analyse an image and return structured crop disease information.
+
+STEP 1: Determine if the image contains a real plant or crop.
+If it does NOT, return ONLY:
 {
   "isPlant": false
 }
 
-If it DOES show a plant leaf or crop, return STRICT JSON ONLY:
+STEP 2: If a plant IS present, identify the visible plant part.
+Choose ONE:
+- leaf
+- stem
+- ear_or_cob
+- panicle
+- grain
+- fruit
+- whole_plant
+- field
+- unknown
+
+STEP 3: Identify the crop IF POSSIBLE based on visible features.
+Only choose when reasonably confident.
+Possible crops include but are not limited to:
+- wheat
+- rice
+- maize (corn)
+- tomato
+- potato
+- cotton
+- sugarcane
+If unsure, use "Unknown".
+
+STEP 4: Identify visible disease symptoms on the identified plant part.
+If no disease is visible, mark disease as "Healthy".
+
+STEP 5: Assess risk level based on severity:
+- Low
+- Medium
+- High
+
+STEP 6: Provide clear, practical farmer actions.
+Provide 3–6 short actions.
+If disease is Healthy, actions should focus on monitoring and prevention.
+
+Return STRICT JSON ONLY in this exact format:
 
 {
   "isPlant": true,
-  "crop": "tomato | rice | wheat",
+  "plantPart": "leaf | stem | ear_or_cob | panicle | grain | fruit | whole_plant | field | unknown",
+  "crop": "crop name or Unknown",
   "disease": "Disease name or Healthy",
   "risk": "Low | Medium | High",
   "actions": ["action1", "action2"],
@@ -40,10 +78,10 @@ If it DOES show a plant leaf or crop, return STRICT JSON ONLY:
 
 Rules:
 - Do NOT analyze animals, humans, or objects
-- Do NOT guess
-- Do NOT add explanations
-- Do NOT use markdown
-- Return JSON ONLY
+- Do NOT guess crop or disease without visual evidence
+- Do NOT include explanations or markdown
+- Do NOT include extra keys
+- Output JSON ONLY
 `.trim();
 
   const body = {
