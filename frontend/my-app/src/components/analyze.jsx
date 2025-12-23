@@ -1,5 +1,5 @@
 // frontend/src/components/analyze.js
-export const analyzeCrop = async (setResult) => {
+export const analyzeCrop = async (setResult, setError, setLoading) => {
   const fileInput = document.querySelector('input[type="file"]');
   const file = fileInput.files[0];
 
@@ -12,6 +12,9 @@ export const analyzeCrop = async (setResult) => {
   formData.append("image", file);
 
   try {
+    setLoading(true);
+    setError(null);
+
     const response = await fetch("http://localhost:5000/analyze", {
       method: "POST",
       body: formData
@@ -19,19 +22,21 @@ export const analyzeCrop = async (setResult) => {
 
     const data = await response.json();
 
-    if (data.success) {
-      setResult(data.analysis);
-    } else {
-      setResult(data.fallback);
+    // ❌ HANDLE BACKEND ERRORS PROPERLY
+    if (!response.ok) {
+      setResult(null);
+      setError(data.error || "Something went wrong. Please try again.");
+      return;
     }
+
+    // ✅ SUCCESS
+    setResult(data.analysis);
 
   } catch (err) {
     console.error("❌ Frontend error:", err);
-    setResult({
-      disease: "Not detected",
-      risk: "Unknown",
-      actions: [],
-      warning: "Server error. Please try again."
-    });
+    setError("Server error. Please try again later.");
+    setResult(null);
+  } finally {
+    setLoading(false);
   }
 };

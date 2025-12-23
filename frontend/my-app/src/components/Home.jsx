@@ -1,15 +1,19 @@
 import { useState } from "react";
 import "./Home.css";
-import { analyzeCrop } from "./analyze"; // import the function
+import { analyzeCrop } from "./analyze";
 
 function Home() {
   const [result, setResult] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       setPreview(URL.createObjectURL(file));
+      setResult(null);
+      setError(null);
     }
   };
 
@@ -32,8 +36,17 @@ function Home() {
         </div>
       )}
 
-      <button onClick={() => analyzeCrop(setResult)}>Analyze Crop</button>
+      <button
+        onClick={() => analyzeCrop(setResult, setError, setLoading)}
+        disabled={loading}
+      >
+        {loading ? "Analyzing..." : "Analyze Crop"}
+      </button>
 
+      {/* ERROR MESSAGE */}
+      {error && <p className="error-message">❌ {error}</p>}
+
+      {/* RESULT */}
       {result && (
         <div id="result">
           <h3>Disease: {result.disease || "Not detected"}</h3>
@@ -47,7 +60,9 @@ function Home() {
 
           <ul>
             {result.actions && result.actions.length > 0 ? (
-              result.actions.map((action, index) => <li key={index}>{action}</li>)
+              result.actions.map((action, index) => (
+                <li key={index}>{action}</li>
+              ))
             ) : (
               <li>No actions suggested</li>
             )}

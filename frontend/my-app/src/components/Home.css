@@ -164,3 +164,9 @@ ul li {
   border: 2px solid #c8e6c9;
   object-fit: contain;
 }
+
+.error-message {
+  color: red;
+  margin-top: 10px;
+  font-weight: bold;
+}
