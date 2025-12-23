@@ -1,69 +1,100 @@
-// backend/routes/analyze.js
+// server/routes/analyze.js
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const fs = require("fs");
-const path = require("path");
 
-const data = require("../data/rules.json");
 const { analyzeImageWithGemini } = require("../services/geminiVision");
 
 const upload = multer({ dest: "uploads/" });
 
 router.post("/", upload.single("image"), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ success: false, error: "No image uploaded" });
+    return res.status(400).json({
+      success: false,
+      error: "No image uploaded"
+    });
   }
 
-  const imagePath = path.join(__dirname, "../", req.file.path);
+  let imagePath = req.file.path;
 
   try {
-    // Read image
     const imageBuffer = fs.readFileSync(imagePath);
-    let imageBase64 = imageBuffer.toString("base64");
+    const imageBase64 = imageBuffer.toString("base64");
 
-    // Call Gemini
+    // 🔹 SINGLE GEMINI CALL
     const aiResponse = await analyzeImageWithGemini(imageBase64);
-    console.log("🧠 Raw AI Response:", aiResponse.analysis);
 
-    // Default fallback structure
-    let structuredResult = {
-      disease: "Not detected",
-      risk: "Unknown",
-      actions: [],
-      warning: "AI analysis unavailable."
-    };
+    // 🔹 QUOTA HANDLING
+    if (aiResponse.status === "RATE_LIMITED") {
+      return res.status(429).json({
+        success: false,
+        error: "Daily AI usage limit reached. Please try again later."
+      });
+    }
 
+    // 🔹 AI FAILURE (not quota)
+    if (aiResponse.status !== "OK") {
+      return res.status(500).json({
+        success: false,
+        error: "AI analysis failed. Please try again."
+      });
+    }
+
+    // 🔹 SAFE JSON PARSE
+    let result;
     try {
-      // 🔥 CLEAN MARKDOWN JSON
-      let cleaned = aiResponse.analysis
+      const cleaned = aiResponse.analysis
         .replace(/```json/gi, "")
         .replace(/```/g, "")
         .trim();
 
-      structuredResult = JSON.parse(cleaned);
-    } catch (parseErr) {
-      console.warn("⚠️ JSON parse failed. Sending raw text.");
-      structuredResult.warning = aiResponse.analysis;
+      result = JSON.parse(cleaned);
+    } catch (err) {
+      console.error("❌ Invalid AI JSON:", aiResponse.analysis);
+      return res.status(500).json({
+        success: false,
+        error: "AI returned an invalid response."
+      });
     }
 
-    console.log("✅ Final structured result:", structuredResult);
+    // 🔹 DOMAIN VALIDATION
+    if (result.isPlant !== true) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid image. Please upload a crop leaf."
+      });
+    }
 
-    res.json({
+    // 🔹 HARD CROP VALIDATION
+    const allowedCrops = ["tomato", "rice", "wheat"];
+    if (
+      !result.crop ||
+      !allowedCrops.includes(result.crop.toLowerCase())
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "Unsupported or invalid crop detected."
+      });
+    }
+
+    // 🔹 SUCCESS
+    return res.status(200).json({
       success: true,
-      analysis: structuredResult
+      analysis: result
     });
 
   } catch (err) {
-    console.error("❌ Error analyzing image:", err);
-
-    res.status(500).json({
+    console.error("❌ Analyze route error:", err);
+    return res.status(500).json({
       success: false,
-      error: err.message,
-      fallback: data
+      error: "Server error while analyzing image."
     });
   } finally {
-    fs.unlink(imagePath, () => {});
+    // 🔹 ALWAYS CLEAN UP FILE
+    if (imagePath) {
+      fs.unlink(imagePath, () => {});
+    }
   }
 });
 

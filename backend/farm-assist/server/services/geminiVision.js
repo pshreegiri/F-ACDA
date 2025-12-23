@@ -1,84 +1,112 @@
-// geminiVision.js
-require("dotenv").config();
+// server/services/geminiVision.js
 const fetch = require("node-fetch");
 
 const API_KEY = process.env.GEMINI_API_KEY;
 
-async function analyzeImageWithGemini(imageBase64) {
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${API_KEY}`;
-
-    const body = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `
-You are an expert plant pathologist.
-
-Analyze the crop image and ALWAYS return a diagnosis.
-Even if uncertain, make the MOST LIKELY diagnosis.
-
-STRICT RULES:
-- Respond ONLY in valid JSON
-- Do NOT add explanations outside JSON
-- Do NOT say "cannot determine"
-- Use best visual judgement
-
-JSON FORMAT:
-{
-  "disease": "string",
-  "risk": "Low | Medium | High",
-  "actions": ["action1", "action2", "action3"],
-  "warning": "string"
+if (!API_KEY) {
+  throw new Error("GEMINI_API_KEY is missing");
 }
-`
-            },
-            {
-              inline_data: {
-                mime_type: "image/jpeg",
-                data: imageBase64
-              }
+
+const GEMINI_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=" +
+  API_KEY;
+
+/**
+ * Single-call Gemini image analysis
+ * @param {string} imageBase64
+ * @returns {Object} status + optional analysis
+ */
+async function analyzeImageWithGemini(imageBase64) {
+  const prompt = `
+You are an agricultural plant disease detection system.
+
+Task:
+1. Decide whether the image shows a plant leaf or crop.
+2. If it does NOT, return ONLY this JSON:
+{
+  "isPlant": false
+}
+
+If it DOES show a plant leaf or crop, return STRICT JSON ONLY:
+
+{
+  "isPlant": true,
+  "crop": "tomato | rice | wheat",
+  "disease": "Disease name or Healthy",
+  "risk": "Low | Medium | High",
+  "actions": ["action1", "action2"],
+  "warning": "string or None"
+}
+
+Rules:
+- Do NOT analyze animals, humans, or objects
+- Do NOT guess
+- Do NOT add explanations
+- Do NOT use markdown
+- Return JSON ONLY
+`.trim();
+
+  const body = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: "image/jpeg",
+              data: imageBase64
             }
-          ]
-        }
-      ]
-    };
+          }
+        ]
+      }
+    ]
+  };
 
-    console.log("=== Sending image to Gemini ===");
-    console.log("Base64 length:", imageBase64.length);
-    console.log("===============================");
-
-    const response = await fetch(url, {
+  try {
+    const response = await fetch(GEMINI_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
 
     const raw = await response.text();
-    console.log("=== Raw Gemini response ===");
-    console.log(raw);
-    console.log("===========================");
 
-    if (!response.ok) {
-      throw new Error(raw || "Empty Gemini response");
+    // 🔒 HARD GUARANTEE: quota handling
+    if (response.status === 429) {
+      return { status: "RATE_LIMITED" };
     }
 
-    const data = JSON.parse(raw);
+    // 🔒 Any non-OK response but not quota
+    if (!response.ok) {
+      console.error("❌ Gemini non-OK response:", raw);
+      return { status: "ERROR" };
+    }
+
+    // 🔒 Parse Gemini wrapper JSON safely
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.error("❌ Gemini wrapper JSON invalid:", raw);
+      return { status: "INVALID_RESPONSE" };
+    }
 
     const text =
-      data.candidates?.[0]?.content?.parts?.[0]?.text;
+      parsed?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     if (!text) {
-      return { analysis: "AI analysis unavailable." };
+      return { status: "INVALID_RESPONSE" };
     }
 
-    return { analysis: text };
+    return {
+      status: "OK",
+      analysis: text
+    };
 
   } catch (err) {
-    console.error("Gemini Vision Error:", err);
-    return { analysis: "AI analysis unavailable." };
+    console.error("❌ Gemini Vision Error:", err.message);
+    return { status: "ERROR" };
   }
 }
 
