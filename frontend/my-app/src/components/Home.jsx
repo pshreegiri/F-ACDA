@@ -1,30 +1,16 @@
 import { useState } from "react";
 import "./Home.css";
+import { analyzeCrop } from "./analyze"; // import the function
 
 function Home() {
   const [result, setResult] = useState(null);
   const [preview, setPreview] = useState(null);
-
-  const fakeResponse = {
-    disease: "Possible Leaf Blight",
-    risk: "Medium",
-    actions: [
-      "Remove affected leaves",
-      "Avoid excess watering",
-      "Use approved fungicide"
-    ],
-    warning: "Do not exceed recommended pesticide dosage"
-  };
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       setPreview(URL.createObjectURL(file));
     }
-  };
-
-  const analyzeCrop = () => {
-    setResult(fakeResponse);
   };
 
   return (
@@ -46,28 +32,29 @@ function Home() {
         </div>
       )}
 
-      <button onClick={analyzeCrop}>Analyze Crop</button>
+      <button onClick={() => analyzeCrop(setResult)}>Analyze Crop</button>
 
       {result && (
         <div id="result">
-          <h3>Disease: {result.disease}</h3>
+          <h3>Disease: {result.disease || "Not detected"}</h3>
 
           <p>
-            Risk Level:
-            <span className={`risk ${result.risk.toLowerCase()}`}>
-              {" "}
-              {result.risk}
+            Risk Level:{" "}
+            <span className={`risk ${result.risk?.toLowerCase() || "unknown"}`}>
+              {result.risk || "Unknown"}
             </span>
           </p>
 
           <ul>
-            {result.actions.map((action, index) => (
-              <li key={index}>{action}</li>
-            ))}
+            {result.actions && result.actions.length > 0 ? (
+              result.actions.map((action, index) => <li key={index}>{action}</li>)
+            ) : (
+              <li>No actions suggested</li>
+            )}
           </ul>
 
           <div className="warning">
-            ⚠️ {result.warning}
+            ⚠️ {result.warning || "AI analysis unavailable."}
           </div>
         </div>
       )}

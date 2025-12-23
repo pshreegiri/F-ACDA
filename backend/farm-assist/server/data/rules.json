@@ -1,0 +1,11 @@
+{
+  "disease": "Possible Crop Stress Detected",
+  "risk": "Low to Medium",
+  "actions": [
+    "Inspect leaves for visible damage",
+    "Avoid overwatering",
+    "Ensure proper sunlight and airflow",
+    "Consult local agriculture officer"
+  ],
+  "warning": "AI analysis unavailable. Do not apply chemicals without expert advice."
+}
