@@ -11,6 +11,10 @@ function Home() {
   const [language, setLanguage] = useState("en");
   const [isTranslating, setIsTranslating] = useState(false);
 
+  const [shops, setShops] = useState([]);
+  const [shopsLoading, setShopsLoading] = useState(false);
+  const [shopsError, setShopsError] = useState(null);
+
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -19,15 +23,50 @@ function Home() {
       setEnglishResult(null);
       setError(null);
       setLanguage("en");
+      setShops([]);
+      setShopsError(null);
     }
+  };
+
+  const fetchNearbyShops = () => {
+    if (!navigator.geolocation) {
+      setShopsError("Geolocation not supported");
+      return;
+    }
+
+    setShopsLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+
+        try {
+          const res = await fetch(
+            `http://localhost:5000/api/nearby-shops?lat=${lat}&lng=${lng}`
+          );
+          const data = await res.json();
+          setShops(data);
+        } catch (err) {
+          setShopsError("Failed to load nearby shops");
+        } finally {
+          setShopsLoading(false);
+        }
+      },
+      () => {
+        setShopsError("Location permission denied");
+        setShopsLoading(false);
+      }
+    );
   };
 
   const handleAnalyze = async () => {
     await analyzeCrop(
       (data) => {
-        setEnglishResult(data); // base English
-        setResult(data);        // display
+        setEnglishResult(data);
+        setResult(data);
         setLanguage("en");
+        fetchNearbyShops();
       },
       setError,
       setLoading
@@ -37,7 +76,6 @@ function Home() {
   const handleTranslate = async () => {
     if (!englishResult) return;
 
-    // Switch back to English instantly
     if (language !== "en") {
       setResult(englishResult);
       setLanguage("en");
@@ -52,15 +90,15 @@ function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           analysis: englishResult,
-          targetLanguage: "Hindi"
-        })
+          targetLanguage: "Hindi",
+        }),
       });
 
       const translated = await res.json();
       setResult(translated);
       setLanguage("hi");
-    } catch (err) {
-      alert("Translation failed. Please try again.");
+    } catch {
+      alert("Translation failed");
     } finally {
       setIsTranslating(false);
     }
@@ -70,7 +108,7 @@ function Home() {
     <div className="container">
       <h1>Farmer AI Compliance & Disease Alert Agent (F-ACDA)</h1>
       <p className="subtitle">
-        Upload a crop image to get instant disease & compliance guidance
+        Upload a crop image to get instant disease guidance
       </p>
 
       <label>Crop Image</label>
@@ -95,7 +133,7 @@ function Home() {
           <h3>Disease: {result.disease || "Not detected"}</h3>
 
           <p>
-            Risk Level:{" "}
+            Risk Level:
             <span
               className={`risk ${
                 englishResult?.risk?.toLowerCase() || "unknown"
@@ -106,17 +144,13 @@ function Home() {
           </p>
 
           <ul>
-            {result.actions && result.actions.length > 0 ? (
-              result.actions.map((action, index) => (
-                <li key={index}>{action}</li>
-              ))
-            ) : (
-              <li>No actions suggested</li>
-            )}
+            {result.actions?.length
+              ? result.actions.map((a, i) => <li key={i}>{a}</li>)
+              : <li>No actions suggested</li>}
           </ul>
 
           <div className="warning">
-            ⚠️ {result.warning || "AI analysis unavailable."}
+            ⚠️ {result.warning || "AI analysis unavailable"}
           </div>
 
           <button
@@ -133,8 +167,27 @@ function Home() {
         </div>
       )}
 
+      {/* NEARBY SHOPS */}
+      {shopsLoading && <p>Loading nearby pesticide shops…</p>}
+      {shopsError && <p className="error-message">{shopsError}</p>}
+
+      {shops.length > 0 && (
+        <div id="result">
+          <h3>Nearby Pesticide / Agro Stores</h3>
+          <ul>
+            {shops.map((shop) => (
+              <li key={shop.place_id}>
+                <strong>{shop.name}</strong>
+                <br />
+                <small>{shop.vicinity}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="footer">
-        Powered by Gemini • Vertex AI
+        F-ACDA
       </div>
     </div>
   );
