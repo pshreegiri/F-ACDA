@@ -11,23 +11,25 @@ function Home() {
   const [language, setLanguage] = useState("en");
   const [isTranslating, setIsTranslating] = useState(false);
 
+  // 🔹 Nearby shops state
   const [shops, setShops] = useState([]);
   const [shopsLoading, setShopsLoading] = useState(false);
   const [shopsError, setShopsError] = useState(null);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setPreview(URL.createObjectURL(file));
-      setResult(null);
-      setEnglishResult(null);
-      setError(null);
-      setLanguage("en");
-      setShops([]);
-      setShopsError(null);
-    }
+    if (!file) return;
+
+    setPreview(URL.createObjectURL(file));
+    setResult(null);
+    setEnglishResult(null);
+    setError(null);
+    setLanguage("en");
+    setShops([]);
+    setShopsError(null);
   };
 
+  // 🔹 Fetch nearby pesticide / agro shops
   const fetchNearbyShops = () => {
     if (!navigator.geolocation) {
       setShopsError("Geolocation not supported");
@@ -38,16 +40,15 @@ function Home() {
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
+        const { latitude, longitude } = pos.coords;
 
         try {
           const res = await fetch(
-            `http://localhost:5000/api/nearby-shops?lat=${lat}&lng=${lng}`
+            `http://localhost:5000/api/nearby-shops?lat=${latitude}&lng=${longitude}`
           );
           const data = await res.json();
-          setShops(data);
-        } catch (err) {
+          setShops(data || []);
+        } catch {
           setShopsError("Failed to load nearby shops");
         } finally {
           setShopsLoading(false);
@@ -66,7 +67,7 @@ function Home() {
         setEnglishResult(data);
         setResult(data);
         setLanguage("en");
-        fetchNearbyShops();
+        fetchNearbyShops(); // 🔥 trigger location feature
       },
       setError,
       setLoading
@@ -108,7 +109,7 @@ function Home() {
     <div className="container">
       <h1>Farmer AI Compliance & Disease Alert Agent (F-ACDA)</h1>
       <p className="subtitle">
-        Upload a crop image to get instant disease guidance
+        Upload a crop image to get instant disease & compliance guidance
       </p>
 
       <label>Crop Image</label>
@@ -144,14 +145,46 @@ function Home() {
           </p>
 
           <ul>
-            {result.actions?.length
-              ? result.actions.map((a, i) => <li key={i}>{a}</li>)
-              : <li>No actions suggested</li>}
+            {result.actions?.length ? (
+              result.actions.map((a, i) => <li key={i}>{a}</li>)
+            ) : (
+              <li>No actions suggested</li>
+            )}
           </ul>
 
-          <div className="warning">
-            ⚠️ {result.warning || "AI analysis unavailable"}
-          </div>
+          {result.warning && (
+            <div className="warning">⚠️ {result.warning}</div>
+          )}
+
+          {/* ✅ GOVERNMENT ADVISORY */}
+          {result.govtAdvisory && (
+            <div
+              style={{
+                marginTop: "16px",
+                padding: "12px",
+                border: "1px solid #b7dfb9",
+                borderRadius: "8px",
+                backgroundColor: "#f6fff6",
+              }}
+            >
+              <h4 style={{ color: "#2e7d32" }}>Government Advisory</h4>
+              <p>{result.govtAdvisory}</p>
+
+              {result.pesticide && (
+                <>
+                  <p><b>Pesticide:</b> {result.pesticide.name}</p>
+                  {result.pesticide.dosage && (
+                    <p><b>Dosage:</b> {result.pesticide.dosage}</p>
+                  )}
+                  {result.pesticide.safety && (
+                    <p><b>Safety:</b> {result.pesticide.safety}</p>
+                  )}
+                </>
+              )}
+
+              <small>Source: ICAR / KVK (Indicative)</small>
+            </div>
+          )}
 
           <button
             onClick={handleTranslate}
@@ -167,7 +200,7 @@ function Home() {
         </div>
       )}
 
-      {/* NEARBY SHOPS */}
+      {/* 🔹 NEARBY SHOPS */}
       {shopsLoading && <p>Loading nearby pesticide shops…</p>}
       {shopsError && <p className="error-message">{shopsError}</p>}
 
@@ -186,9 +219,7 @@ function Home() {
         </div>
       )}
 
-      <div className="footer">
-        F-ACDA
-      </div>
+      <div className="footer">F-ACDA</div>
     </div>
   );
 }

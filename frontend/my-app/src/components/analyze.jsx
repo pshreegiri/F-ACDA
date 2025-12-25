@@ -1,10 +1,11 @@
 // frontend/src/components/analyze.js
+
 export const analyzeCrop = async (setResult, setError, setLoading) => {
   const fileInput = document.querySelector('input[type="file"]');
-  const file = fileInput.files[0];
+  const file = fileInput?.files?.[0];
 
   if (!file) {
-    alert("Please upload an image first!");
+    setError("Please upload an image first.");
     return;
   }
 
@@ -14,6 +15,7 @@ export const analyzeCrop = async (setResult, setError, setLoading) => {
   try {
     setLoading(true);
     setError(null);
+    setResult(null);
 
     const response = await fetch("http://localhost:5000/analyze", {
       method: "POST",
@@ -22,20 +24,27 @@ export const analyzeCrop = async (setResult, setError, setLoading) => {
 
     const data = await response.json();
 
-    // ❌ HANDLE BACKEND ERRORS PROPERLY
-    if (!response.ok) {
-      setResult(null);
-      setError(data.error || "Something went wrong. Please try again.");
+    if (!response.ok || data.success !== true) {
+      setError(data.error || "Analysis failed. Please try again.");
       return;
     }
 
-    // ✅ SUCCESS
-    setResult(data.analysis);
+    // ✅ IMPORTANT: pass ALL new backend fields
+    setResult({
+      crop: data.analysis.crop,
+      disease: data.analysis.disease,
+      risk: data.analysis.risk,
+      actions: data.analysis.actions || [],
+      warning: data.analysis.warning || null,
+
+      // 🔽 NEW FIELDS
+      govtAdvisory: data.analysis.govtAdvisory || null,
+      pesticide: data.analysis.pesticide || null
+    });
 
   } catch (err) {
-    console.error("❌ Frontend error:", err);
+    console.error("❌ Frontend analyze error:", err);
     setError("Server error. Please try again later.");
-    setResult(null);
   } finally {
     setLoading(false);
   }

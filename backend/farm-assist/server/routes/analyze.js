@@ -5,6 +5,7 @@ const multer = require("multer");
 const fs = require("fs");
 
 const { analyzeImageWithGemini } = require("../services/geminiVision");
+const GOVT_ADVISORY = require("../data/govtAdvisoryQuick");
 
 const upload = multer({ dest: "uploads/" });
 
@@ -18,8 +19,28 @@ function normalizeCrop(crop) {
   if (c.includes("rice") || c.includes("paddy")) return "rice";
   if (c.includes("wheat")) return "wheat";
   if (c.includes("tomato")) return "tomato";
+  if (c.includes("potato")) return "potato";
+  if (c.includes("cotton")) return "cotton";
+  if (c.includes("sugarcane")) return "sugarcane";
 
   return "Unknown";
+}
+
+/* -------------------- DISEASE NORMALIZATION -------------------- */
+function normalizeDisease(disease) {
+  if (!disease) return null;
+
+  const d = disease.toLowerCase();
+
+  if (d.includes("ear rot")) return "ear rot";
+  if (d.includes("corn smut")) return "corn smut";
+  if (d.includes("late blight")) return "late blight";
+  if (d.includes("early blight")) return "early blight";
+  if (d.includes("bacterial wilt")) return "bacterial wilt";
+  if (d.includes("wheat rust")) return "wheat rust";
+  if (d.includes("leaf curl")) return "leaf curl virus";
+
+  return d;
 }
 
 /* -------------------- DOMAIN KNOWLEDGE -------------------- */
@@ -28,12 +49,15 @@ const HIGH_RISK_DISEASES = [
   "late blight",
   "bacterial wilt",
   "panama disease",
-  "wheat rust"
+  "wheat rust",
+  "ear rot"
 ];
 
 const DISEASE_WARNINGS = {
   "corn smut":
-    "Galls can eventually burst, releasing millions of dark spores that can persist in the soil for several years and spread via wind."
+    "Galls can burst and release spores that persist in soil and spread by wind.",
+  "ear rot":
+    "Infected ears may contain harmful mycotoxins. Avoid consumption without testing."
 };
 
 const SUPPORTED_CROPS = [
@@ -101,26 +125,45 @@ router.post("/", upload.single("image"), async (req, res) => {
       });
     }
 
-    /* -------------------- NORMALIZE CROP -------------------- */
+    /* -------------------- NORMALIZE OUTPUT -------------------- */
     result.crop = normalizeCrop(result.crop);
+    result.disease = normalizeDisease(result.disease);
 
     /* -------------------- RISK OVERRIDE -------------------- */
     if (
       result.disease &&
-      HIGH_RISK_DISEASES.includes(result.disease.toLowerCase())
+      HIGH_RISK_DISEASES.includes(result.disease)
     ) {
       result.risk = "High";
     }
 
     /* -------------------- WARNING INJECTION -------------------- */
-    if (!result.warning || result.warning === "None") {
-      const key = result.disease?.toLowerCase();
-      if (DISEASE_WARNINGS[key]) {
-        result.warning = DISEASE_WARNINGS[key];
+     if (!result.warning || result.warning === "None") {
+      if (DISEASE_WARNINGS[result.disease]) {
+        result.warning = DISEASE_WARNINGS[result.disease];
       }
     }
 
-    /* -------------------- SUPPORT CHECK (NON-BLOCKING) -------------------- */
+    /* -------------------- GOVERNMENT ADVISORY MAPPING -------------------- */
+    const cropKey = result.crop;
+    const diseaseKey = result.disease;
+
+    if (
+      GOVT_ADVISORY[cropKey] &&
+      GOVT_ADVISORY[cropKey][diseaseKey]
+    ) {
+      const info = GOVT_ADVISORY[cropKey][diseaseKey];
+
+      result.govtAdvisory = info.advisory;
+      result.pesticide = info.pesticide || null;
+      result.risk = info.risk || result.risk;
+
+      result.warning =
+        result.warning ||
+        "Based on ICAR / Krishi Vigyan Kendra indicative guidelines";
+    }
+
+    /* -------------------- SUPPORT CHECK -------------------- */
     if (!SUPPORTED_CROPS.includes(result.crop)) {
       result.warning =
         result.warning ||
